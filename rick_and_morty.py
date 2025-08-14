@@ -1,14 +1,31 @@
 import requests
 import pandas as pd
-import json
+import time
+from datetime import datetime
 
+DELAY = 0.1
+api_request_log = 'requests_log.txt'
+def request(base_url, page=1, session=None):
+    if session is None:
+        session = requests.Session()
 
-def request(base_url, page=1):
-    page_number = f'?page={page}'
+    if page > 1:
+        time.sleep(DELAY)
+
+    url = f"{base_url}?page={page}"
     try:
-        r = requests.get(base_url + page_number)
-        print(f"API request to page #{page} made successfully")
-        return r.json()
+        response = session.get(url)
+        with open(api_request_log, 'a') as f:
+            # msg = ''
+            response_code = response.status_code
+            if response_code == 200:
+                msg = f"API request to page #{page} made successfully"
+            else:
+                msg = f"API request to page #{page} not successful"
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"{timestamp} - {msg} - status code: {response_code}\n")
+        response.raise_for_status()
+        return response.json()
     except requests.exceptions.HTTPError as http_error:
          print(f"HTTP error occurred: {http_error}")
     except requests.exceptions.ConnectionError as conn_error:
@@ -31,7 +48,7 @@ def parse_json(data):
         for i in item['episode']:
             string = i
             char = "/"
-            curr_char_episodes.append(int(string[string.rfind(char) +1 :]))
+            curr_char_episodes.append(int(i.split("/")[-1]))
            
 
         char = {
@@ -54,11 +71,15 @@ def to_df(parsed_data):
     return pd.DataFrame(parsed_data)
 
 base_url = "https://rickandmortyapi.com/api/character/"
-get_data = request(base_url)
-number_pages = get_pages(get_data)
 all_chars = []
-for i in range(1, number_pages + 1):
-    get_data = request(base_url, i)
-    all_chars.extend(parse_json(get_data))
+
+with requests.Session() as session:
+    get_data = request(base_url, session=session)
+    number_pages = get_pages(get_data)
+    all_chars = []
+    for i in range(1, number_pages + 1):
+        get_data = request(base_url, i, session=session)
+        all_chars.extend(parse_json(get_data))
+
 df = to_df(all_chars)
 print(len(all_chars))
